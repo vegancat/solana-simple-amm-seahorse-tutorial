@@ -4,3 +4,12 @@
 from seahorse.prelude import *
 
 declare_id('Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS')
+
+class PoolAccount(Account):
+  # in format of tokenX-tokenY 
+  ticket: str
+  token_a_mint: PublicKey
+  token_b_mint: PublicKey
+  token_a_amount: u32
+  token_b_amount: u32
+  fee: u16
