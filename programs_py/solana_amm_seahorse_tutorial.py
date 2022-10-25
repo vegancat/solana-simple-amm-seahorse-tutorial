@@ -3,6 +3,8 @@
 
 from seahorse.prelude import *
 
+
+
 declare_id('Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS')
 
 class PoolAccount(Account):
@@ -14,20 +16,49 @@ class PoolAccount(Account):
   token_b_amount: u32
   fee: u16
 
+class PoolLiquidityTokenAuthority(Account):
+  bump: u8
+  # TODO: remove this when there is support for fetching supply of a token in seahorse
+  supply: u64
+
 @instruction
-def create_lp_token():
-  pass
+def init_amm(
+    initializer: TokenAccount, 
+    pool_liquidity_lp_token_authority: Empty[PoolLiquidityTokenAuthority], 
+    lp_mint: Empty[TokenMint]
+  ):
+  
+  assert initializer.key() == "73BHpXyPbWX1rEBTPKMjDB2aVzZop267iwEBDsoPAE3Q"
+
+  init_pool_liquidity_lp_token_authority = pool_liquidity_lp_token_authority.init(
+    payer = initializer,
+    seeds = ['pool_liquidity_lp_token_authority']
+  )
+
+  lp_mint.init(
+    payer = initializer,
+    seeds = ['pool_liquidity_lp_token_mint'],
+    decimals = 6,
+    authority = pool_liquidity_lp_token_authority
+  )
+
+  init_pool_liquidity_lp_token_authority.bump = pool_liquidity_lp_token_authority.bump()
+  init_pool_liquidity_lp_token_authority.supply = 0
+  
 
 @instruction
 def initialize_and_provide_liquidity_first(
     initializer: Signer, 
     token_a_mint: TokenMint,
     token_b_mint: TokenMint,
+    lp_mint: TokenMint,
     pool_account: Empty[PoolAccount],
     pool_token_a_account: Empty[TokenAccount],
     pool_token_b_account: Empty[TokenAccount],
+    pool_liquidity_lp_token_authority: PoolLiquidityTokenAuthority,
     initializer_deposit_token_a_account : TokenAccount,
     initializer_deposit_token_b_account : TokenAccount,
+    initializer_receive_lp_token_account: TokenAccount,
     token_a_deposit_amount: u32,
     token_b_deposit_amount: u32,
     pool_ticket: str,
@@ -80,6 +111,22 @@ def initialize_and_provide_liquidity_first(
   pool_account.token_a_amount = token_a_deposit_amount
   pool_account.token_b_amount = token_b_deposit_amount
 
+  # IMPORTANT: this process is simplified for the sake of the tutorial
+  # in reality, the amount of LP tokens minted should be calculated based on various factors
+  # such as the total supply of LP tokens, the amount of tokens deposited, and the current ratio of the pool
+  # calculating the amount of LP tokens to mint
+  amount_of_lp_tokens_to_mint = token_a_deposit_amount
+
+  # minting the liquidity tokens
+  lp_mint.mint(
+    authority = pool_liquidity_lp_token_authority,
+    to = initializer_receive_lp_token_account,
+    amount = amount_of_lp_tokens_to_mint,
+    signer = ['pool_liquidity_lp_token_mint', pool_liquidity_lp_token_authority.bump]
+  )
+
+  # updating the supply of the LP token
+  pool_liquidity_lp_token_authority.supply += amount_of_lp_tokens_to_mint
 
 @instruction
 def provide_liquidity_additional():
