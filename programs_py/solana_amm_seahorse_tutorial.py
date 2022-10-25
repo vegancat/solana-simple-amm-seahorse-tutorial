@@ -3,8 +3,6 @@
 
 from seahorse.prelude import *
 
-
-
 declare_id('Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS')
 
 class PoolAccount(Account):
@@ -12,13 +10,13 @@ class PoolAccount(Account):
   ticket: str
   token_a_account: TokenAccount
   token_b_account: TokenAccount
-  token_lp_amount_minted: u32
-  token_a_amount: u32
-  token_b_amount: u32
+  token_lp_amount_minted: u64
+  token_a_amount: u64
+  token_b_amount: u64
   fee: u16
 
 class PoolLiquidityTokenAuthority(Account):
-  bump: u8
+  lp_token_supply: u64
 
 @instruction
 def init_amm(
@@ -26,8 +24,6 @@ def init_amm(
     pool_liquidity_lp_token_authority: Empty[PoolLiquidityTokenAuthority], 
     lp_mint: Empty[TokenMint]
   ):
-
-  assert initializer.key() == "73BHpXyPbWX1rEBTPKMjDB2aVzZop267iwEBDsoPAE3Q"
 
   init_pool_liquidity_lp_token_authority = pool_liquidity_lp_token_authority.init(
     payer = initializer,
@@ -38,10 +34,10 @@ def init_amm(
     payer = initializer,
     seeds = ['pool_liquidity_lp_token_mint'],
     decimals = 6,
-    authority = pool_liquidity_lp_token_authority
+    authority = init_pool_liquidity_lp_token_authority
   )
 
-  init_pool_liquidity_lp_token_authority.bump = pool_liquidity_lp_token_authority.bump()
+  init_pool_liquidity_lp_token_authority.lp_token_supply = u64(0)
   
 
 @instruction
@@ -57,8 +53,8 @@ def initialize_and_provide_liquidity_first(
     initializer_deposit_token_a_account : TokenAccount,
     initializer_deposit_token_b_account : TokenAccount,
     initializer_receive_lp_token_account: TokenAccount,
-    token_a_deposit_amount: u32,
-    token_b_deposit_amount: u32,
+    token_a_deposit_amount: u64,
+    token_b_deposit_amount: u64,
     pool_ticket: str,
     # fees in basis points. 10000 = 100%
     pool_fee: u16
@@ -67,33 +63,33 @@ def initialize_and_provide_liquidity_first(
   # checking for authority over creating new pools
   # TODO: use keys_eq() instead when it's available
   # TODO: normal equation checking is rather expensive in terms of compute units
-  assert initializer.key() == "73BHpXyPbWX1rEBTPKMjDB2aVzZop267iwEBDsoPAE3Q", "Only the admin can create new pools"
+  assert str(initializer.key()) == "73BHpXyPbWX1rEBTPKMjDB2aVzZop267iwEBDsoPAE3Q", "Only the admin can create new pools"
 
   # init a pool
-  pool_account.init(
+  pool_account = pool_account.init(
     payer = initializer,
     seeds = [token_a_mint, token_b_mint],
   )
 
-  pool_token_a_account.init(
+  pool_token_a_account = pool_token_a_account.init(
     payer = initializer,
-    seeds = [pool_account, token_a_mint]
+    seeds = [str(pool_account.key()), str(token_a_mint.key())],
   )
 
-  pool_token_b_account.init(
+  pool_token_b_account = pool_token_b_account.init(
     payer = initializer,
-    seeds = [pool_account, token_b_mint]
+    seeds = [str(pool_account.key()), str(token_b_mint.key())]
   )
 
-  assert initializer_deposit_token_a_account.amount >= token_a_deposit_amount, 'In-sufficient balance'
-  assert initializer_deposit_token_b_account.amount >= token_b_deposit_amount, 'In-sufficient balance'
+  assert initializer_deposit_token_a_account.amount() >= token_a_deposit_amount, 'In-sufficient balance'
+  assert initializer_deposit_token_b_account.amount() >= token_b_deposit_amount, 'In-sufficient balance'
   assert pool_account.token_b_account == pool_token_b_account, 'Invalid pool token account'
   assert pool_account.token_a_account == pool_token_b_account, 'Invalid pool token account'
   
   pool_account.ticket = pool_ticket
   pool_account.token_a_account = pool_token_a_account
   pool_account.token_b_account = pool_token_b_account
-  pool_account.pool_fee = pool_fee
+  pool_account.fee = pool_fee
 
 
   # these two token transfers would determine the pool ratio
@@ -123,7 +119,7 @@ def initialize_and_provide_liquidity_first(
     authority = pool_liquidity_lp_token_authority,
     to = initializer_receive_lp_token_account,
     amount = amount_of_lp_tokens_to_mint,
-    signer = ['pool_liquidity_lp_token_mint', pool_liquidity_lp_token_authority.bump]
+    signer = ['pool_liquidity_lp_token_mint']
   )
 
   # updating the supply of the LP token
@@ -140,19 +136,19 @@ def provide_liquidity_additional(
     initializer_deposit_token_a_account : TokenAccount,
     initializer_deposit_token_b_account : TokenAccount,
     initializer_receive_lp_token_account: TokenAccount,
-    token_a_deposit_amount: u32,
-    token_b_deposit_amount: u32,
+    token_a_deposit_amount: u64,
+    token_b_deposit_amount: u64,
     pool_ticket: str,
   ):
 
-  assert initializer_deposit_token_a_account.amount >= token_a_deposit_amount, 'In-sufficient balance'
-  assert initializer_deposit_token_b_account.amount >= token_b_deposit_amount, 'In-sufficient balance'
+  assert initializer_deposit_token_a_account.amount() >= token_a_deposit_amount, 'In-sufficient balance'
+  assert initializer_deposit_token_b_account.amount() >= token_b_deposit_amount, 'In-sufficient balance'
   assert pool_account.ticket == pool_ticket, 'Invalid pool ticket'
   assert pool_account.token_b_account == pool_token_b_account, 'Invalid pool token account'
   assert pool_account.token_a_account == pool_token_b_account, 'Invalid pool token account'
 
   token_b_to_token_a_ratio = pool_account.token_b_amount / pool_account.token_a_amount
-  token_lp_to_token_a_ratio = pool_liquidity_lp_token_authority.supply / pool_account.token_a_amount
+  token_lp_to_token_a_ratio: f64 = pool_account.token_lp_amount_minted / pool_account.token_a_amount
 
   assert token_b_deposit_amount == token_a_deposit_amount * token_b_to_token_a_ratio, 'Invalid token ratio'
 
@@ -176,14 +172,14 @@ def provide_liquidity_additional(
   # in reality, the amount of LP tokens minted should be calculated based on various factors
   # such as the total supply of LP tokens, the amount of tokens deposited, and the current ratio of the pool
   # calculating the amount of LP tokens to mint
-  amount_of_lp_tokens_to_mint = token_a_deposit_amount * token_lp_to_token_a_ratio
+  amount_of_lp_tokens_to_mint = u64(token_a_deposit_amount * token_lp_to_token_a_ratio)
 
   # minting the liquidity tokens
   lp_mint.mint(
     authority = pool_liquidity_lp_token_authority,
     to = initializer_receive_lp_token_account,
     amount = amount_of_lp_tokens_to_mint,
-    signer = ['pool_liquidity_lp_token_mint', pool_liquidity_lp_token_authority.bump]
+    signer = ['pool_liquidity_lp_token_mint', pool_liquidity_lp_token_authority]
   )
 
   # updating the supply of the LP token
@@ -203,31 +199,31 @@ def withdraw_liquidity(
     initializer_receive_token_a_account : TokenAccount,
     initializer_receive_token_b_account : TokenAccount,
     initializer_deposit_lp_token_account: TokenAccount,
-    token_lp_deposit_amount: u32,
+    token_lp_deposit_amount: u64,
     pool_ticket: str,
   ):
   
-  assert initializer_deposit_lp_token_account.amount >= token_lp_deposit_amount, 'In-sufficient balance'
+  assert initializer_deposit_lp_token_account.amount() >= token_lp_deposit_amount, 'In-sufficient balance'
   assert pool_account.ticket == pool_ticket, 'Invalid pool ticket'
   assert pool_account.token_b_account == pool_token_b_account, 'Invalid pool token account'
   assert pool_account.token_a_account == pool_token_b_account, 'Invalid pool token account'
 
   burned_lp_to_lp_supply_ration = token_lp_deposit_amount / pool_account.token_lp_amount_minted
-  token_a_to_withdraw = pool_account.token_a_amount * burned_lp_to_lp_supply_ration
-  token_b_to_withdraw = pool_account.token_b_amount * burned_lp_to_lp_supply_ration
+  token_a_to_withdraw = u64(pool_account.token_a_amount * burned_lp_to_lp_supply_ration)
+  token_b_to_withdraw = u64(pool_account.token_b_amount * burned_lp_to_lp_supply_ration)
 
   pool_token_a_account.transfer(
     authority=pool_account,
     to=initializer_receive_token_a_account,
     amount=token_a_to_withdraw,
-    signer=[pool_account, token_a_mint]
+    signer=[str(pool_account.key()), str(token_a_mint.key())]
   )
 
   pool_token_b_account.transfer(
     authority=pool_account,
     to=initializer_receive_token_b_account,
     amount=token_b_to_withdraw,
-    signer=[pool_account, token_b_mint]
+    signer=[str(pool_account.key()), str(token_b_mint.key())]
     
   )
 
@@ -239,7 +235,7 @@ def withdraw_liquidity(
     authority = pool_liquidity_lp_token_authority,
     holder=initializer_deposit_lp_token_account,
     amount=token_lp_deposit_amount,
-    signer = ['pool_liquidity_lp_token_mint', pool_liquidity_lp_token_authority.bump]
+    signer = ['pool_liquidity_lp_token_mint']
   )
 
   # updating the supply of the LP token
@@ -254,14 +250,14 @@ def token_a_to_token_b(
     pool_token_b_account: TokenAccount,
     initializer_token_a_account : TokenAccount,
     initializer_token_b_account : TokenAccount,
-    token_a_deposit_amount: u32,
+    token_a_deposit_amount: u64,
     pool_ticket: str,
     pool_fee: u16
   ):
   
-  assert initializer_token_a_account.amount >= token_a_deposit_amount, 'In-sufficient balance'
+  assert initializer_token_a_account.amount() >= token_a_deposit_amount, 'In-sufficient balance'
   assert pool_account.ticket == pool_ticket, 'Invalid pool ticket'
-  assert pool_account.pool_fee == pool_fee, 'Invalid pool fee'
+  assert pool_account.fee == pool_fee, 'Invalid pool fee'
   assert pool_account.token_b_account == pool_token_b_account, 'Invalid pool token account'
   assert pool_account.token_a_account == pool_token_b_account, 'Invalid pool token account'
 
@@ -272,7 +268,7 @@ def token_a_to_token_b(
   # calculating the new amount of token A in pool
   new_pool_token_a_amount = pool_account.token_a_amount + token_a_deposit_amount
   # calculating the new amount of token B in pool with fee being applied
-  new_pool_token_b_amount: u32 = constant_product / (new_pool_token_a_amount - pool_fee)
+  new_pool_token_b_amount = u32(constant_product / (new_pool_token_a_amount - pool_fee))
   # calculating the amount of token B to send to the user
   token_b_to_withdraw = pool_account.token_b_amount - new_pool_token_b_amount
 
@@ -287,7 +283,7 @@ def token_a_to_token_b(
     authority=pool_account,
     to=initializer_token_b_account,
     amount=token_b_to_withdraw,
-    signer=[pool_account, token_b_mint]
+    signer=[str(pool_account.key()), str(token_b_mint.key())]
   )
 
   pool_account.token_a_amount += token_a_deposit_amount
@@ -302,14 +298,14 @@ def token_b_to_token_a(
     pool_token_b_account: TokenAccount,
     initializer_token_a_account : TokenAccount,
     initializer_token_b_account : TokenAccount,
-    token_b_deposit_amount: u32,
+    token_b_deposit_amount: u64,
     pool_ticket: str,
     pool_fee: u16
   ):
   
-  assert initializer_token_a_account.amount >= token_b_deposit_amount, 'In-sufficient balance'
+  assert initializer_token_a_account.amount() >= token_b_deposit_amount, 'In-sufficient balance'
   assert pool_account.ticket == pool_ticket, 'Invalid pool ticket'
-  assert pool_account.pool_fee == pool_fee, 'Invalid pool fee'
+  assert pool_account.fee == pool_fee, 'Invalid pool fee'
   assert pool_account.token_b_account == pool_token_b_account, 'Invalid pool token account'
   assert pool_account.token_a_account == pool_token_b_account, 'Invalid pool token account'
 
@@ -320,7 +316,7 @@ def token_b_to_token_a(
   # calculating the new amount of token B in pool
   new_pool_token_b_amount = pool_account.token_b_amount + token_b_deposit_amount
   # calculating the new amount of token A in pool with fee being applied
-  new_pool_token_a_amount: u32 = constant_product / (new_pool_token_b_amount - pool_fee)
+  new_pool_token_a_amount = u64(constant_product / (new_pool_token_b_amount - pool_fee))
   # calculating the amount of token A to send to the user
   token_a_to_withdraw = pool_account.token_a_amount - new_pool_token_a_amount
 
@@ -335,7 +331,7 @@ def token_b_to_token_a(
     authority=pool_account,
     to=initializer_token_a_account,
     amount=token_a_to_withdraw,
-    signer=[pool_account, token_a_mint]
+    signer=[str(pool_account.key()), str(token_a_mint.key())]
   )
 
   pool_account.token_a_amount -= token_a_to_withdraw 
