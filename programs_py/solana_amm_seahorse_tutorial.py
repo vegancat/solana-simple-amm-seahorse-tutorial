@@ -15,6 +15,10 @@ class PoolAccount(Account):
   fee: u16
 
 @instruction
+def create_lp_token():
+  pass
+
+@instruction
 def initialize_and_provide_liquidity_first(
     initializer: Signer, 
     token_a_mint: TokenMint,
@@ -50,6 +54,7 @@ def initialize_and_provide_liquidity_first(
     payer = initializer,
     seeds = [pool_account, token_b_mint]
   )
+
   assert initializer_deposit_token_a_account.amount >= token_a_deposit_amount, 'In-sufficient balance'
   assert initializer_deposit_token_b_account.amount >= token_b_deposit_amount, 'In-sufficient balance'
   
@@ -74,3 +79,17 @@ def initialize_and_provide_liquidity_first(
 
   pool_account.token_a_amount = token_a_deposit_amount
   pool_account.token_b_amount = token_b_deposit_amount
+
+
+@instruction
+def provide_liquidity_additional():
+  pass
+
+
+@instruction
+def withdraw_liquidity():
+  pass
+
+@instruction
+def swap():
+  pass
