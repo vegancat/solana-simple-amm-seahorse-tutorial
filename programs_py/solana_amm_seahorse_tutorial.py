@@ -27,7 +27,7 @@ def init_amm(
     pool_liquidity_lp_token_authority: Empty[PoolLiquidityTokenAuthority], 
     lp_mint: Empty[TokenMint]
   ):
-  
+
   assert initializer.key() == "73BHpXyPbWX1rEBTPKMjDB2aVzZop267iwEBDsoPAE3Q"
 
   init_pool_liquidity_lp_token_authority = pool_liquidity_lp_token_authority.init(
@@ -129,8 +129,65 @@ def initialize_and_provide_liquidity_first(
   pool_liquidity_lp_token_authority.supply += amount_of_lp_tokens_to_mint
 
 @instruction
-def provide_liquidity_additional():
-  pass
+def provide_liquidity_additional(
+    initializer: Signer, 
+    lp_mint: TokenMint,
+    pool_account: PoolAccount,
+    pool_token_a_account: TokenAccount,
+    pool_token_b_account: TokenAccount,
+    pool_liquidity_lp_token_authority: PoolLiquidityTokenAuthority,
+    initializer_deposit_token_a_account : TokenAccount,
+    initializer_deposit_token_b_account : TokenAccount,
+    initializer_receive_lp_token_account: TokenAccount,
+    token_a_deposit_amount: u32,
+    token_b_deposit_amount: u32,
+    pool_ticket: str,
+    # fees in basis points. 10000 = 100%
+    pool_fee: u16
+  ):
+
+  assert initializer_deposit_token_a_account.amount >= token_a_deposit_amount, 'In-sufficient balance'
+  assert initializer_deposit_token_b_account.amount >= token_b_deposit_amount, 'In-sufficient balance'
+  assert pool_account.ticket == pool_ticket, 'Invalid pool ticket'
+  assert pool_account.pool_fee == pool_fee, 'Invalid pool fee'
+
+  token_b_to_token_a_ratio = pool_account.token_b_amount / pool_account.token_a_amount
+  token_lp_to_token_a_ratio = pool_liquidity_lp_token_authority.supply / pool_account.token_a_amount
+
+  assert token_b_deposit_amount == token_a_deposit_amount * token_b_to_token_a_ratio, 'Invalid token ratio'
+
+  # these two token transfers would determine the pool ratio
+  initializer_deposit_token_a_account.transfer(
+    authority=initializer,
+    to=pool_token_a_account,
+    amount=token_a_deposit_amount
+  )
+
+  initializer_deposit_token_b_account.transfer(
+    authority=initializer,
+    to=pool_token_b_account,
+    amount=token_b_deposit_amount
+  )
+
+  pool_account.token_a_amount += token_a_deposit_amount
+  pool_account.token_b_amount += token_b_deposit_amount
+
+  # IMPORTANT: this process is simplified for the sake of the tutorial
+  # in reality, the amount of LP tokens minted should be calculated based on various factors
+  # such as the total supply of LP tokens, the amount of tokens deposited, and the current ratio of the pool
+  # calculating the amount of LP tokens to mint
+  amount_of_lp_tokens_to_mint = token_a_deposit_amount * token_lp_to_token_a_ratio
+
+  # minting the liquidity tokens
+  lp_mint.mint(
+    authority = pool_liquidity_lp_token_authority,
+    to = initializer_receive_lp_token_account,
+    amount = amount_of_lp_tokens_to_mint,
+    signer = ['pool_liquidity_lp_token_mint', pool_liquidity_lp_token_authority.bump]
+  )
+
+  # updating the supply of the LP token
+  pool_liquidity_lp_token_authority.supply += amount_of_lp_tokens_to_mint
 
 
 @instruction
