@@ -293,3 +293,51 @@ def token_a_to_token_b(
   pool_account.token_a_amount += token_a_deposit_amount
   pool_account.token_b_amount -= token_b_to_withdraw 
 
+@instruction
+def token_b_to_token_a(
+    initializer: Signer, 
+    token_a_mint: TokenMint,
+    pool_account: PoolAccount,
+    pool_token_a_account: TokenAccount,
+    pool_token_b_account: TokenAccount,
+    initializer_token_a_account : TokenAccount,
+    initializer_token_b_account : TokenAccount,
+    token_b_deposit_amount: u32,
+    pool_ticket: str,
+    pool_fee: u16
+  ):
+  
+  assert initializer_token_a_account.amount >= token_b_deposit_amount, 'In-sufficient balance'
+  assert pool_account.ticket == pool_ticket, 'Invalid pool ticket'
+  assert pool_account.pool_fee == pool_fee, 'Invalid pool fee'
+  assert pool_account.token_b_account == pool_token_b_account, 'Invalid pool token account'
+  assert pool_account.token_a_account == pool_token_b_account, 'Invalid pool token account'
+
+  # calculating the constant product of the pool
+  constant_product = pool_account.token_a_amount * pool_account.token_b_amount
+  # calculating the fee amount charged by the pool
+  pool_fee = token_b_deposit_amount * pool_fee / 10000
+  # calculating the new amount of token B in pool
+  new_pool_token_b_amount = pool_account.token_b_amount + token_b_deposit_amount
+  # calculating the new amount of token A in pool with fee being applied
+  new_pool_token_a_amount: u32 = constant_product / (new_pool_token_b_amount - pool_fee)
+  # calculating the amount of token A to send to the user
+  token_a_to_withdraw = pool_account.token_a_amount - new_pool_token_a_amount
+
+
+  initializer_token_b_account.transfer(
+    authority=initializer,
+    to=pool_token_a_account,
+    amount=token_b_deposit_amount
+  )
+
+  pool_token_a_account.transfer(
+    authority=pool_account,
+    to=initializer_token_a_account,
+    amount=token_a_to_withdraw,
+    signer=[pool_account, token_a_mint]
+  )
+
+  pool_account.token_a_amount -= token_a_to_withdraw 
+  pool_account.token_b_amount += token_b_deposit_amount
+
