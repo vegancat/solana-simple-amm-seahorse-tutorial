@@ -30,6 +30,12 @@ def initialize_and_provide_liquidity_first(
     # fees in basis points. 10000 = 100%
     pool_fee: u16
   ):
+  
+  # checking for authority over creating new pools
+  # TODO: use keys_eq() instead when it's available
+  # TODO: normal equation checking is rather expensive in terms of compute units
+  assert initializer.key() == "73BHpXyPbWX1rEBTPKMjDB2aVzZop267iwEBDsoPAE3Q", "Only the admin can create new pools"
+
   # init a pool
   pool_account.init(
     payer = initializer,
